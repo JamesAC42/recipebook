@@ -18,7 +18,7 @@ interface TranscribedRecipe {
   cuisine: string;
   ingredients: Ingredient[];
   instructions: string;
-  health_info: any;
+  health_info: Record<string, unknown> | null;
 }
 
 export default function Home() {

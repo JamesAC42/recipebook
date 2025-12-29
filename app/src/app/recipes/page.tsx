@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { formatVolumeFromMl, formatWeightFromG, getUnitInfo, parseQuantityToNumber } from '@/utils/measurements';
 
 interface Ingredient {
   name: string;
@@ -18,7 +19,7 @@ interface Recipe {
   description: string;
   cuisine: string;
   instructions: string;
-  health_info: any;
+  health_info: Record<string, unknown> | null;
   ingredients: Ingredient[];
 }
 
@@ -33,52 +34,38 @@ export default function RecipesPage() {
   const [showRecipeSources, setShowRecipeSources] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login');
-      return;
-    }
-    fetchRecipes();
-  }, [isAuthenticated, search]);
-
-  const showNotify = (message: string, type: 'success' | 'error' = 'success') => {
+  const showNotify = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
-  };
+  }, []);
 
-  const fetchRecipes = async () => {
+  const fetchRecipes = useCallback(async () => {
+    if (!token) return;
     try {
       const response = await fetch(`http://localhost:5000/api/recipes?search=${search}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       setRecipes(data);
-    } catch (err) {
+    } catch {
       showNotify('Failed to fetch recipes', 'error');
     }
-  };
+  }, [token, search, showNotify]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login');
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchRecipes();
+  }, [isAuthenticated, router, fetchRecipes]);
 
   const toggleSelect = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     setSelectedRecipes(prev => 
       prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]
     );
-  };
-
-  const parseQuantity = (qty: string): number => {
-    if (!qty) return 0;
-    // Handle fractions like "1/2"
-    if (qty.includes('/')) {
-      const [num, den] = qty.split('/').map(n => parseFloat(n.trim()));
-      if (den) return num / den;
-    }
-    // Handle mixed numbers like "1 1/2"
-    if (qty.includes(' ')) {
-      const parts = qty.split(' ');
-      return parts.reduce((acc, part) => acc + parseQuantity(part), 0);
-    }
-    const parsed = parseFloat(qty);
-    return isNaN(parsed) ? 0 : parsed;
   };
 
   const normalizeAisle = (aisle: string): string => {
@@ -108,39 +95,119 @@ export default function RecipesPage() {
   };
 
   const generateGroceryList = () => {
-    const combined: Record<string, Record<string, { quantity: number; originalQuantities: string[]; unit: string; aisle: string; name: string; sources: string[] }>> = {};
+    type Agg = {
+      displayName: string;
+      sources: Set<string>;
+      countTotal: number;
+      volumeMlTotal: number;
+      weightGTotal: number;
+      preferredVolumeUnits: Set<string>;
+      preferredWeightUnits: Set<string>;
+      unknownTotals: Map<string, number>;
+    };
+
+    const combined: Record<string, Record<string, { quantity: number; unit: string; aisle: string; name: string; sources: string[] }>> = {};
     const selected = recipes.filter(r => selectedRecipes.includes(r.id));
-    
+
+    const aggByAisle: Record<string, Record<string, Agg>> = {};
+
     selected.forEach(recipe => {
       recipe.ingredients.forEach(ing => {
         const aisle = normalizeAisle(ing.aisle);
-        const name = normalizeIngredientName(ing.name);
-        const unit = (ing.unit || '').toLowerCase().trim();
-        
-        if (!combined[aisle]) combined[aisle] = {};
-        
-        const qtyNum = parseQuantity(ing.quantity);
-        const key = `${name}-${unit}`;
-        
-        if (!combined[aisle][key]) {
-          combined[aisle][key] = { 
-            quantity: qtyNum, 
-            originalQuantities: [ing.quantity],
-            unit: ing.unit, 
-            aisle: aisle,
-            name: ing.name, // Keep original name for display
-            sources: [recipe.title]
+        const nameKey = normalizeIngredientName(ing.name);
+        if (!nameKey) return;
+
+        const qtyNum = parseQuantityToNumber(ing.quantity);
+        const unitInfo = getUnitInfo(ing.unit);
+
+        if (!aggByAisle[aisle]) aggByAisle[aisle] = {};
+        if (!aggByAisle[aisle][nameKey]) {
+          aggByAisle[aisle][nameKey] = {
+            displayName: (ing.name || '').trim(),
+            sources: new Set<string>(),
+            countTotal: 0,
+            volumeMlTotal: 0,
+            weightGTotal: 0,
+            preferredVolumeUnits: new Set<string>(),
+            preferredWeightUnits: new Set<string>(),
+            unknownTotals: new Map<string, number>(),
           };
+        }
+
+        const agg = aggByAisle[aisle][nameKey];
+        agg.sources.add(recipe.title);
+        if (!agg.displayName) agg.displayName = (ing.name || '').trim();
+
+        if (unitInfo.kind === 'count') {
+          agg.countTotal += qtyNum;
+        } else if (unitInfo.kind === 'volume') {
+          agg.volumeMlTotal += qtyNum * unitInfo.toBaseFactor;
+          agg.preferredVolumeUnits.add(unitInfo.canonicalUnit);
+        } else if (unitInfo.kind === 'weight') {
+          agg.weightGTotal += qtyNum * unitInfo.toBaseFactor;
+          agg.preferredWeightUnits.add(unitInfo.canonicalUnit);
         } else {
-          combined[aisle][key].quantity += qtyNum;
-          combined[aisle][key].originalQuantities.push(ing.quantity);
-          if (!combined[aisle][key].sources.includes(recipe.title)) {
-            combined[aisle][key].sources.push(recipe.title);
-          }
+          const key = unitInfo.prettyUnit || '';
+          const prev = agg.unknownTotals.get(key) || 0;
+          agg.unknownTotals.set(key, prev + qtyNum);
         }
       });
     });
-    
+
+    // Convert aggregated totals into display rows (one per compatible measurement type).
+    for (const [aisle, byName] of Object.entries(aggByAisle)) {
+      if (!combined[aisle]) combined[aisle] = {};
+
+      const nameEntries = Object.entries(byName).sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [nameKey, agg] of nameEntries) {
+        const sources = Array.from(agg.sources).sort((a, b) => a.localeCompare(b));
+        const displayName = agg.displayName || nameKey;
+
+        if (agg.countTotal) {
+          combined[aisle][`${nameKey}|count`] = {
+            quantity: agg.countTotal,
+            unit: '',
+            aisle,
+            name: displayName,
+            sources,
+          };
+        }
+
+        if (agg.volumeMlTotal) {
+          const { quantity, unit } = formatVolumeFromMl(agg.volumeMlTotal, agg.preferredVolumeUnits);
+          combined[aisle][`${nameKey}|volume`] = {
+            quantity,
+            unit,
+            aisle,
+            name: displayName,
+            sources,
+          };
+        }
+
+        if (agg.weightGTotal) {
+          const { quantity, unit } = formatWeightFromG(agg.weightGTotal, agg.preferredWeightUnits);
+          combined[aisle][`${nameKey}|weight`] = {
+            quantity,
+            unit,
+            aisle,
+            name: displayName,
+            sources,
+          };
+        }
+
+        for (const [rawUnit, qty] of agg.unknownTotals.entries()) {
+          const unitLabel = rawUnit;
+          combined[aisle][`${nameKey}|unknown|${unitLabel || 'unitless'}`] = {
+            quantity: qty,
+            unit: unitLabel,
+            aisle,
+            name: displayName,
+            sources,
+          };
+        }
+      }
+    }
+
     return combined;
   };
 
@@ -306,19 +373,23 @@ export default function RecipesPage() {
                   <div key={aisle} style={{ marginBottom: '1.5rem' }}>
                     <h3 style={{ borderBottom: '2px solid var(--secondary-color)', paddingBottom: '0.25rem', color: 'var(--secondary-color)' }}>{aisle}</h3>
                     <ul style={{ listStyle: 'none', marginTop: '0.5rem', padding: 0 }}>
-                      {Object.entries(itemsMap).map(([key, data]: [string, any], idx) => (
-                        <li key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.5rem 0' }}>
-                          <input type="checkbox" id={`item-${aisle}-${idx}`} style={{ transform: 'scale(1.2)', marginTop: '0.2rem' }} />
-                          <label htmlFor={`item-${aisle}-${idx}`} style={{ textTransform: 'capitalize', cursor: 'pointer' }}>
-                            <strong>{data.quantity > 0 ? Number(data.quantity.toFixed(2)) : ''} {data.unit}</strong> {data.name}
+                      {Object.entries(itemsMap).map(([itemKey, data]) => {
+                        const item = data as { quantity: number; unit: string; aisle: string; name: string; sources: string[] };
+                        const safeId = `item-${aisle}-${itemKey}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                        return (
+                        <li key={itemKey} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.5rem 0' }}>
+                          <input type="checkbox" id={safeId} style={{ transform: 'scale(1.2)', marginTop: '0.2rem' }} />
+                          <label htmlFor={safeId} style={{ textTransform: 'capitalize', cursor: 'pointer' }}>
+                            <strong>{item.quantity > 0 ? Number(item.quantity.toFixed(2)) : ''} {item.unit}</strong> {item.name}
                             {showRecipeSources && (
                               <span style={{ fontSize: '0.8rem', color: '#888', fontStyle: 'italic', marginLeft: '0.5rem' }}>
-                                ({data.sources.join(', ')})
+                                ({item.sources.join(', ')})
                               </span>
                             )}
                           </label>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 ))
