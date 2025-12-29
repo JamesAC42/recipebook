@@ -53,7 +53,7 @@ export default function RecipesPage() {
     
     const doFetch = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/recipes?search=${search}`, {
+        const response = await fetch(`/recipebook/api/recipes?search=${search}`, {
           headers: { 'Authorization': `Bearer ${token}` },
           signal: controller.signal
         });

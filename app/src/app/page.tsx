@@ -61,7 +61,7 @@ export default function Home() {
     images.forEach(img => formData.append('images', img));
 
     try {
-      const response = await fetch('http://localhost:5000/api/recipes/transcribe', {
+      const response = await fetch('/recipebook/api/recipes/transcribe', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -85,7 +85,7 @@ export default function Home() {
   const handleSave = async () => {
     if (!transcribed || !token) return;
     try {
-      const response = await fetch('http://localhost:5000/api/recipes', {
+      const response = await fetch('/recipebook/api/recipes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
