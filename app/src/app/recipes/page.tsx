@@ -1,0 +1,307 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
+import Navbar from '@/components/Navbar';
+
+interface Ingredient {
+  name: string;
+  quantity: string;
+  unit: string;
+  aisle: string;
+}
+
+interface Recipe {
+  id: number;
+  title: string;
+  description: string;
+  cuisine: string;
+  instructions: string;
+  health_info: any;
+  ingredients: Ingredient[];
+}
+
+export default function RecipesPage() {
+  const { isAuthenticated, token } = useAuth();
+  const router = useRouter();
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [search, setSearch] = useState('');
+  const [selectedRecipes, setSelectedRecipes] = useState<number[]>([]);
+  const [showGroceryList, setShowGroceryList] = useState(false);
+  const [viewingRecipe, setViewingRecipe] = useState<Recipe | null>(null);
+  const [showRecipeSources, setShowRecipeSources] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login');
+      return;
+    }
+    fetchRecipes();
+  }, [isAuthenticated, search]);
+
+  const showNotify = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const fetchRecipes = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/recipes?search=${search}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setRecipes(data);
+    } catch (err) {
+      showNotify('Failed to fetch recipes', 'error');
+    }
+  };
+
+  const toggleSelect = (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    setSelectedRecipes(prev => 
+      prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]
+    );
+  };
+
+  const parseQuantity = (qty: string): number => {
+    if (!qty) return 0;
+    // Handle fractions like "1/2"
+    if (qty.includes('/')) {
+      const [num, den] = qty.split('/').map(n => parseFloat(n.trim()));
+      if (den) return num / den;
+    }
+    // Handle mixed numbers like "1 1/2"
+    if (qty.includes(' ')) {
+      const parts = qty.split(' ');
+      return parts.reduce((acc, part) => acc + parseQuantity(part), 0);
+    }
+    const parsed = parseFloat(qty);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const generateGroceryList = () => {
+    const combined: Record<string, Record<string, { quantity: number; originalQuantities: string[]; unit: string; aisle: string; name: string; sources: string[] }>> = {};
+    const selected = recipes.filter(r => selectedRecipes.includes(r.id));
+    
+    selected.forEach(recipe => {
+      recipe.ingredients.forEach(ing => {
+        const aisle = ing.aisle || 'Other';
+        const name = ing.name.toLowerCase().trim();
+        const unit = (ing.unit || '').toLowerCase().trim();
+        
+        if (!combined[aisle]) combined[aisle] = {};
+        
+        const qtyNum = parseQuantity(ing.quantity);
+        const key = `${name}-${unit}`;
+        
+        if (!combined[aisle][key]) {
+          combined[aisle][key] = { 
+            quantity: qtyNum, 
+            originalQuantities: [ing.quantity],
+            unit: ing.unit, 
+            aisle: aisle,
+            name: ing.name, // Keep original name for display
+            sources: [recipe.title]
+          };
+        } else {
+          combined[aisle][key].quantity += qtyNum;
+          combined[aisle][key].originalQuantities.push(ing.quantity);
+          if (!combined[aisle][key].sources.includes(recipe.title)) {
+            combined[aisle][key].sources.push(recipe.title);
+          }
+        }
+      });
+    });
+    
+    return combined;
+  };
+
+  const groceryList = generateGroceryList();
+
+  // Group recipes by cuisine
+  const recipesByCuisine = recipes.reduce((acc, recipe) => {
+    const cuisine = recipe.cuisine || 'Uncategorized';
+    if (!acc[cuisine]) acc[cuisine] = [];
+    acc[cuisine].push(recipe);
+    return acc;
+  }, {} as Record<string, Recipe[]>);
+
+  return (
+    <main>
+      <Navbar />
+      
+      {notification && (
+        <div className="notification" style={{
+          position: 'fixed', top: '2rem', right: '2rem', 
+          backgroundColor: notification.type === 'success' ? 'var(--secondary-color)' : '#e74c3c',
+          color: 'white', padding: '1rem 2rem', zIndex: 2000,
+          border: '2px solid var(--border-color)',
+          boxShadow: '4px 4px 0 var(--border-color)',
+          animation: 'slideIn 0.3s ease-out'
+        }}>
+          {notification.message}
+        </div>
+      )}
+
+      <div style={{ maxWidth: '70rem', margin: '0 auto', padding: '0 1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h1>My Recipe Collection</h1>
+          <input 
+            type="text" 
+            placeholder="Search recipes..." 
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: '100%', maxWidth: '20rem' }}
+          />
+        </div>
+
+        {selectedRecipes.length > 0 && (
+          <div className="paper" style={{ backgroundColor: '#fffbe6', borderColor: '#ffe58f', padding: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <span><strong>{selectedRecipes.length}</strong> recipes selected for your grocery list</span>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => setSelectedRecipes([])} style={{ backgroundColor: '#f5f5f5' }}>Clear</button>
+                <button onClick={() => setShowGroceryList(true)}>Generate Grocery List</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {Object.entries(recipesByCuisine).map(([cuisine, cuisineRecipes]) => (
+          <div key={cuisine} style={{ marginBottom: '3rem' }}>
+            <h2 style={{ borderBottom: '2px solid var(--primary-color)', paddingBottom: '0.5rem', marginBottom: '1.5rem', textTransform: 'capitalize' }}>
+              {cuisine}
+            </h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(18rem, 1fr))', gap: '2rem' }}>
+              {cuisineRecipes.map(recipe => (
+                <div 
+                  key={recipe.id} 
+                  className={`paper skeuomorphic-card recipe-card ${selectedRecipes.includes(recipe.id) ? 'selected' : ''}`} 
+                  onClick={() => setViewingRecipe(recipe)}
+                  style={{ position: 'relative' }}
+                >
+                  <div 
+                    style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 10 }}
+                    onClick={(e) => toggleSelect(e, recipe.id)}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={selectedRecipes.includes(recipe.id)} 
+                      onChange={() => {}} // Handled by div click
+                      style={{ transform: 'scale(1.5)', cursor: 'pointer' }}
+                    />
+                  </div>
+                  <h3 style={{ margin: 0, paddingRight: '2rem' }}>{recipe.title}</h3>
+                  <p style={{ fontSize: '0.85rem', marginTop: '1rem', lineBreak: 'anywhere' }}>
+                    {recipe.description?.substring(0, 80)}...
+                  </p>
+                  <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#666' }}>{recipe.ingredients.length} ingredients</span>
+                    <button style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>View Details</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* Recipe Detail Modal */}
+        {viewingRecipe && (
+          <div className="modal-overlay" onClick={() => setViewingRecipe(null)}>
+            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '50rem', width: '95%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>{viewingRecipe.title}</h1>
+                  <p style={{ color: '#666', textTransform: 'capitalize' }}>{viewingRecipe.cuisine} cuisine</p>
+                </div>
+                <button onClick={() => setViewingRecipe(null)}>Close</button>
+              </div>
+              
+              <div className="recipe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(20rem, 1fr))', gap: '2rem', marginTop: '2rem' }}>
+                <div>
+                  <h3>Ingredients</h3>
+                  <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {viewingRecipe.ingredients.map((ing, i) => (
+                      <li key={i} style={{ padding: '0.5rem 0', borderBottom: '1px dotted #ccc' }}>
+                        <strong>{ing.quantity} {ing.unit}</strong> {ing.name} 
+                        {ing.aisle && <span style={{ fontSize: '0.7rem', color: '#999', marginLeft: '0.5rem' }}>({ing.aisle})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Instructions</h3>
+                  <p style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{viewingRecipe.instructions}</p>
+                  
+                  {viewingRecipe.health_info && (
+                    <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#f9f9f9', border: '1px solid #ddd' }}>
+                      <h4 style={{ margin: 0, marginBottom: '0.5rem' }}>Health & Nutrition</h4>
+                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                        {Object.entries(viewingRecipe.health_info).map(([key, val]) => (
+                          <span key={key}><strong>{key}:</strong> {String(val)}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showGroceryList && (
+          <div className="modal-overlay" onClick={() => setShowGroceryList(false)}>
+            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '40rem', width: '95%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2>My Grocery List</h2>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={() => window.print()} style={{ backgroundColor: 'var(--secondary-color)', color: 'white' }}>Print</button>
+                  <button onClick={() => setShowGroceryList(false)}>Close</button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                <input 
+                  type="checkbox" 
+                  id="toggle-sources" 
+                  checked={showRecipeSources} 
+                  onChange={(e) => setShowRecipeSources(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <label htmlFor="toggle-sources" style={{ cursor: 'pointer' }}>Show recipe sources</label>
+              </div>
+              
+              {Object.keys(groceryList).length === 0 ? (
+                <p>No ingredients found for selected recipes.</p>
+              ) : (
+                Object.entries(groceryList).map(([aisle, itemsMap]) => (
+                  <div key={aisle} style={{ marginBottom: '1.5rem' }}>
+                    <h3 style={{ borderBottom: '2px solid var(--secondary-color)', paddingBottom: '0.25rem', color: 'var(--secondary-color)' }}>{aisle}</h3>
+                    <ul style={{ listStyle: 'none', marginTop: '0.5rem', padding: 0 }}>
+                      {Object.entries(itemsMap).map(([key, data]: [string, any], idx) => (
+                        <li key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.5rem 0' }}>
+                          <input type="checkbox" id={`item-${aisle}-${idx}`} style={{ transform: 'scale(1.2)', marginTop: '0.2rem' }} />
+                          <label htmlFor={`item-${aisle}-${idx}`} style={{ textTransform: 'capitalize', cursor: 'pointer' }}>
+                            <strong>{data.quantity > 0 ? Number(data.quantity.toFixed(2)) : ''} {data.unit}</strong> {data.name}
+                            {showRecipeSources && (
+                              <span style={{ fontSize: '0.8rem', color: '#888', fontStyle: 'italic', marginLeft: '0.5rem' }}>
+                                ({data.sources.join(', ')})
+                              </span>
+                            )}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
