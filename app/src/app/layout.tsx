@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
+import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
   title: "Retro Recipe Book",
@@ -16,9 +17,15 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
+          <Navbar />
           <div className="container">
             {children}
           </div>
+          <footer className="footer-container">
+            <div className="footer-image-box">
+              <img src="/foodwars.jpg" alt="Food Wars" className="footer-image" />
+            </div>
+          </footer>
         </AuthProvider>
       </body>
     </html>

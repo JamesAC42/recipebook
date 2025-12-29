@@ -9,20 +9,24 @@ interface AuthContextType {
   login: (token: string, username: string) => void;
   logout: () => void;
   isAuthenticated: boolean;
+  isInitialized: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('recipe_auth_token');
-  });
-  const [username, setUsername] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('recipe_username');
-  });
+  const [token, setToken] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   const router = useRouter();
+
+  React.useEffect(() => {
+    const savedToken = localStorage.getItem('recipe_auth_token');
+    const savedUsername = localStorage.getItem('recipe_username');
+    setToken(savedToken);
+    setUsername(savedUsername);
+    setIsInitialized(true);
+  }, []);
 
   const login = (token: string, username: string) => {
     localStorage.setItem('recipe_auth_token', token);
@@ -41,7 +45,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ token, username, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ 
+      token, 
+      username, 
+      login, 
+      logout, 
+      isAuthenticated: !!token,
+      isInitialized 
+    }}>
       {children}
     </AuthContext.Provider>
   );

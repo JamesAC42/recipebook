@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
 
 interface Ingredient {
   name: string;
@@ -22,7 +21,7 @@ interface TranscribedRecipe {
 }
 
 export default function Home() {
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated, token, isInitialized } = useAuth();
   const router = useRouter();
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -31,10 +30,10 @@ export default function Home() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isInitialized && !isAuthenticated) {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [isInitialized, isAuthenticated, router]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -110,11 +109,10 @@ export default function Home() {
     }
   };
 
-  if (!isAuthenticated) return null;
+  if (!isInitialized || !isAuthenticated) return null;
 
   return (
     <main>
-      <Navbar />
       
       {notification && (
         <div className="notification" style={{

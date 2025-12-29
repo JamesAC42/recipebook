@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
 import { formatVolumeFromMl, formatWeightFromG, getUnitInfo, parseQuantityToNumber } from '@/utils/measurements';
 
 interface Ingredient {
@@ -24,7 +23,7 @@ interface Recipe {
 }
 
 export default function RecipesPage() {
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated, token, isInitialized } = useAuth();
   const router = useRouter();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [search, setSearch] = useState('');
@@ -39,27 +38,39 @@ export default function RecipesPage() {
     setTimeout(() => setNotification(null), 3000);
   }, []);
 
-  const fetchRecipes = useCallback(async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(`http://localhost:5000/api/recipes?search=${search}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      setRecipes(data);
-    } catch {
-      showNotify('Failed to fetch recipes', 'error');
-    }
-  }, [token, search, showNotify]);
-
+  // Handle redirection separately
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isInitialized && !isAuthenticated) {
       router.push('/login');
-      return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchRecipes();
-  }, [isAuthenticated, router, fetchRecipes]);
+  }, [isInitialized, isAuthenticated, router]);
+
+  // Handle data fetching
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated || !token) return;
+
+    const controller = new AbortController();
+    
+    const doFetch = async () => {
+      try {
+        const response = await fetch(`http://localhost:5000/api/recipes?search=${search}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error('Failed to fetch');
+        const data = await response.json();
+        setRecipes(data);
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          showNotify('Failed to fetch recipes', 'error');
+        }
+      }
+    };
+
+    doFetch();
+
+    return () => controller.abort();
+  }, [isInitialized, isAuthenticated, token, search, showNotify]);
 
   const toggleSelect = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
@@ -221,9 +232,10 @@ export default function RecipesPage() {
     return acc;
   }, {} as Record<string, Recipe[]>);
 
+  if (!isInitialized || !isAuthenticated) return null;
+
   return (
     <main>
-      <Navbar />
       
       {notification && (
         <div className="notification" style={{

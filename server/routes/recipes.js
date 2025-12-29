@@ -57,6 +57,10 @@ router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => 
          Existing Ingredient -> Aisle Mapping: ${ingredientAisleContext || 'None yet'}. 
          Match these names and aisles exactly if the ingredient is the same.
       
+      3. INSTRUCTIONS: Format the instructions as a single string with clear double newlines (\n\n) between each step or paragraph. 
+         - Ensure each step is numbered or clearly separated.
+         - The instructions should be easy to read as plain text.
+
       The images might be multiple pages of the same recipe. Be as accurate as possible. If some info is missing, use null.
     `;
 
