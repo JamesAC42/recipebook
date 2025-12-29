@@ -98,15 +98,18 @@ input, textarea, select {
   background-color: rgba(0,0,0,0.6);
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
+  overflow-y: auto;
   z-index: 1000;
   backdrop-filter: blur(2px);
-  padding: 1rem;
+  padding: 2.625rem 0.5rem; /* Moved down ~10px more and narrowed side gaps */
 }
 
 .modal-content {
-  max-height: 90vh;
-  overflow-y: auto;
+  width: 100%;
+  max-width: 75rem;
+  max-height: none;
+  margin-bottom: 2rem;
   animation: fadeIn 0.3s ease-out;
   border: 0.125rem solid var(--border-color);
   box-shadow: 0.5rem 0.5rem 0 rgba(0,0,0,0.2);
@@ -197,22 +200,22 @@ input, textarea, select {
 .sidebar {
   position: fixed;
   top: 0;
-  right: -100%;
-  width: 16rem;
+  left: -100%;
+  width: 18rem;
   height: 100%;
   background-color: #fff;
   z-index: 2000;
-  transition: right 0.3s ease-in-out;
+  transition: left 0.3s ease-in-out;
   padding: 2rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  box-shadow: -0.125rem 0 0.3125rem rgba(0,0,0,0.1);
-  border-left: 0.125rem solid var(--border-color);
+  box-shadow: 0.125rem 0 0.3125rem rgba(0,0,0,0.1);
+  border-right: 0.125rem solid var(--border-color);
 }
 
 .sidebar.open {
-  right: 0;
+  left: 0;
 }
 
 .sidebar-overlay {

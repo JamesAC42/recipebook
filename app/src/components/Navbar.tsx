@@ -21,6 +21,10 @@ export default function Navbar() {
     <>
       <div className="nav-wrapper">
         <nav className="nav-container">
+          <button className="menu-toggle" onClick={toggleSidebar} aria-label="Toggle menu" style={{ order: -1 }}>
+            ☰
+          </button>
+          
           <div className="nav-links">
             <Link href="/" className="add-recipe-btn">
               <span>Add Recipe</span>
@@ -36,16 +40,12 @@ export default function Navbar() {
             <span>Chef {username}</span>
             <button onClick={logout} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>Leave Kitchen</button>
           </div>
-
-          <button className="menu-toggle" onClick={toggleSidebar} aria-label="Toggle menu">
-            ☰
-          </button>
         </nav>
       </div>
 
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={toggleSidebar} />
       <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
           <button 
             onClick={toggleSidebar} 
             style={{ background: 'none', border: 'none', fontSize: '2rem', boxShadow: 'none', padding: 0, minWidth: 'auto' }}

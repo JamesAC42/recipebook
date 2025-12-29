@@ -315,13 +315,15 @@ export default function RecipesPage() {
         {/* Recipe Detail Modal */}
         {viewingRecipe && (
           <div className="modal-overlay" onClick={() => setViewingRecipe(null)}>
-            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '50rem', width: '95%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <div>
+            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ padding: '1rem 2rem 2rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setViewingRecipe(null)}>Close</button>
+                </div>
+                <div style={{ marginTop: '1rem' }}>
                   <h1 style={{ margin: 0 }}>{viewingRecipe.title}</h1>
                   <p style={{ color: '#666', textTransform: 'capitalize' }}>{viewingRecipe.cuisine} cuisine</p>
                 </div>
-                <button onClick={() => setViewingRecipe(null)}>Close</button>
               </div>
               
               <div className="recipe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(20rem, 1fr))', gap: '2rem', marginTop: '2rem' }}>
@@ -358,13 +360,13 @@ export default function RecipesPage() {
 
         {showGroceryList && (
           <div className="modal-overlay" onClick={() => setShowGroceryList(false)}>
-            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '40rem', width: '95%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2>My Grocery List</h2>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ padding: '1rem 2rem 2rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                   <button onClick={() => window.print()} style={{ backgroundColor: 'var(--secondary-color)', color: 'white' }}>Print</button>
                   <button onClick={() => setShowGroceryList(false)}>Close</button>
                 </div>
+                <h2 style={{ marginTop: '1rem' }}>My Grocery List</h2>
               </div>
 
               <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
