@@ -23,7 +23,7 @@ export default function RootLayout({
           </div>
           <footer className="footer-container">
             <div className="footer-image-box">
-              <img src="/foodwars.jpg" alt="Food Wars" className="footer-image" />
+              <img src="/recipebook/foodwars.jpg" alt="Food Wars" className="footer-image" />
             </div>
           </footer>
         </AuthProvider>
