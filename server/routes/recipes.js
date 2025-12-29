@@ -15,6 +15,20 @@ router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => 
       return res.status(400).json({ error: 'No images uploaded' });
     }
 
+    // Fetch existing aisles and ingredients with their common aisles for canonicalization context
+    const existingAislesRes = await db.query('SELECT DISTINCT aisle FROM ingredients WHERE aisle IS NOT NULL');
+    const ingredientAisleMappingRes = await db.query(`
+      SELECT DISTINCT ON (name) name, aisle 
+      FROM ingredients 
+      WHERE aisle IS NOT NULL 
+      ORDER BY name, created_at DESC
+    `);
+    
+    const existingAisles = existingAislesRes.rows.map(r => r.aisle).join(', ');
+    const ingredientAisleContext = ingredientAisleMappingRes.rows
+      .map(r => `${r.name} (${r.aisle})`)
+      .join(', ');
+
     const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
     const prompt = `
@@ -29,7 +43,21 @@ router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => 
         "instructions": "Step by step instructions",
         "health_info": { "calories": "...", "protein": "...", "carbs": "...", "fat": "..." }
       }
-      The images might be multiple pages of the same recipe. Be as accurate as possible. If some info is missing, use null. Organize ingredients by aisle if possible.
+      
+      CRITICAL RULES FOR CANONICALIZATION:
+      1. AISLES: Use a consistent set of aisles. Prefer these if they match: Produce, Dairy & Eggs, Meat & Seafood, Pantry, Bakery, Frozen, Beverages, Spices, Baking.
+         - Always use "Dairy & Eggs" instead of "Dairy/Eggs" or "Dairy and Eggs".
+         Existing aisles in database: ${existingAisles || 'None yet'}. Use these if they fit.
+      
+      2. INGREDIENT NAMES & AISLE MATCHING: Use simple, singular, lowercase names. 
+         - Use "all-purpose flour" instead of "all purpose flour".
+         - Use "extra-virgin olive oil" instead of "extra virgin olive oil".
+         - IMPORTANT: If an ingredient already exists in the database, use its existing aisle to avoid duplicates in different sections.
+         
+         Existing Ingredient -> Aisle Mapping: ${ingredientAisleContext || 'None yet'}. 
+         Match these names and aisles exactly if the ingredient is the same.
+      
+      The images might be multiple pages of the same recipe. Be as accurate as possible. If some info is missing, use null.
     `;
 
     const imageParts = req.files.map(file => ({

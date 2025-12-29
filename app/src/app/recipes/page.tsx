@@ -81,14 +81,40 @@ export default function RecipesPage() {
     return isNaN(parsed) ? 0 : parsed;
   };
 
+  const normalizeAisle = (aisle: string): string => {
+    if (!aisle) return 'Other';
+    const normalized = aisle.toLowerCase().trim()
+      .replace(/\s+and\s+/g, ' & ')
+      .replace(/\//g, ' & ')
+      .replace(/dairy\s+&\s+eggs/g, 'Dairy & Eggs')
+      .replace(/produce/g, 'Produce')
+      .replace(/meat\s+&\s+seafood/g, 'Meat & Seafood')
+      .replace(/pantry/g, 'Pantry')
+      .replace(/bakery/g, 'Bakery')
+      .replace(/frozen/g, 'Frozen')
+      .replace(/beverages/g, 'Beverages')
+      .replace(/spices/g, 'Spices')
+      .replace(/baking/g, 'Baking');
+    
+    // Capitalize first letter of each word for display
+    return normalized.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  const normalizeIngredientName = (name: string): string => {
+    if (!name) return '';
+    return name.toLowerCase().trim()
+      .replace(/-/g, ' ') // "all-purpose" -> "all purpose"
+      .replace(/\s+/g, ' '); // remove double spaces
+  };
+
   const generateGroceryList = () => {
     const combined: Record<string, Record<string, { quantity: number; originalQuantities: string[]; unit: string; aisle: string; name: string; sources: string[] }>> = {};
     const selected = recipes.filter(r => selectedRecipes.includes(r.id));
     
     selected.forEach(recipe => {
       recipe.ingredients.forEach(ing => {
-        const aisle = ing.aisle || 'Other';
-        const name = ing.name.toLowerCase().trim();
+        const aisle = normalizeAisle(ing.aisle);
+        const name = normalizeIngredientName(ing.name);
         const unit = (ing.unit || '').toLowerCase().trim();
         
         if (!combined[aisle]) combined[aisle] = {};
