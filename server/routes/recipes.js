@@ -11,7 +11,10 @@ const upload = multer({
   limits: {
     // Keep memory usage bounded; phone photos can be huge.
     files: 10,
-    fileSize: 30 * 1024 * 1024, // 30MB per file
+    // Match nginx `client_max_body_size 100m;` more closely.
+    // NOTE: memoryStorage buffers the whole file in RAM; if this becomes an issue,
+    // switch to disk storage or reduce camera resolution.
+    fileSize: 100 * 1024 * 1024, // 100MB per file
   },
 });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'your_gemini_api_key_here');
@@ -232,6 +235,29 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete recipe' });
   }
+});
+
+// Multer errors happen before our async handlers run, so they must be handled by
+// an Express error middleware (4 args).
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const isTooLarge =
+      err.code === 'LIMIT_FILE_SIZE' ||
+      err.code === 'LIMIT_FILE_COUNT' ||
+      err.code === 'LIMIT_UNEXPECTED_FILE';
+
+    res.setHeader('X-Upload-Rejected-By', 'multer');
+
+    return res.status(isTooLarge ? 413 : 400).json({
+      error:
+        err.code === 'LIMIT_FILE_SIZE'
+          ? 'Upload too large. Please upload a smaller image (or lower camera resolution) and try again.'
+          : err.message || 'Upload failed.',
+      code: err.code,
+    });
+  }
+
+  return next(err);
 });
 
 module.exports = router;

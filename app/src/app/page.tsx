@@ -75,22 +75,39 @@ export default function Home() {
         body: formData,
       });
       const rawText = await response.text();
-      let data: any = null;
+      const contentType = response.headers.get('content-type') || '';
+      const uploadRejectedBy = response.headers.get('x-upload-rejected-by');
+      let data: unknown = null;
       try {
         data = rawText ? JSON.parse(rawText) : null;
       } catch {
         data = null;
       }
       if (response.ok) {
-        setTranscribed(data);
+        setTranscribed(data as TranscribedRecipe);
         showNotify('Recipe transcribed successfully!');
       } else {
+        const msgFromJson =
+          data && typeof data === 'object' && 'error' in data
+            ? String((data as { error: unknown }).error)
+            : '';
+        const msgFromText =
+          !msgFromJson && rawText
+            ? rawText.replace(/\s+/g, ' ').trim().slice(0, 180)
+            : '';
+
         const msg =
-          (data && typeof data === 'object' && data.error) ||
-          `Failed to transcribe (HTTP ${response.status}).`;
+          msgFromJson ||
+          (response.status === 413 && uploadRejectedBy === 'multer'
+            ? 'Upload too large (rejected by server). Please upload fewer/smaller images.'
+            : response.status === 413
+              ? 'Upload too large (rejected by proxy). Please upload fewer/smaller images.'
+              : msgFromText && !contentType.includes('application/json')
+                ? `Failed to transcribe (HTTP ${response.status}): ${msgFromText}`
+                : `Failed to transcribe (HTTP ${response.status}).`);
         showNotify(msg, 'error');
       }
-    } catch (err) {
+    } catch {
       showNotify('Error transcribing image', 'error');
     } finally {
       setLoading(false);
@@ -119,7 +136,7 @@ export default function Home() {
       } else {
         showNotify('Failed to save recipe', 'error');
       }
-    } catch (err) {
+    } catch {
       showNotify('Error saving recipe', 'error');
     }
   };
