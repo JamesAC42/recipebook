@@ -32,6 +32,8 @@ export default function RecipesPage() {
   const [viewingRecipe, setViewingRecipe] = useState<Recipe | null>(null);
   const [showRecipeSources, setShowRecipeSources] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const showNotify = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -71,6 +73,30 @@ export default function RecipesPage() {
 
     return () => controller.abort();
   }, [isInitialized, isAuthenticated, token, search, showNotify]);
+
+  const handleDelete = async (id: number) => {
+    if (!token) return;
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/recipebook/api/recipes/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) throw new Error('Failed to delete recipe');
+
+      setRecipes(prev => prev.filter(r => r.id !== id));
+      setSelectedRecipes(prev => prev.filter(rid => rid !== id));
+      showNotify('Recipe deleted successfully');
+      setViewingRecipe(null);
+      setRecipeToDelete(null);
+    } catch (err) {
+      console.error(err);
+      showNotify('Failed to delete recipe', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const toggleSelect = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
@@ -353,6 +379,34 @@ export default function RecipesPage() {
                     </div>
                   )}
                 </div>
+              </div>
+              
+              <div style={{ marginTop: '3rem', borderTop: '0.0625rem solid #eee', paddingTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setRecipeToDelete(viewingRecipe)} 
+                  style={{ backgroundColor: '#fff', color: '#e74c3c', borderColor: '#e74c3c' }}
+                >
+                  Delete Recipe
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {recipeToDelete && (
+          <div className="modal-overlay" onClick={() => setRecipeToDelete(null)} style={{ zIndex: 1100 }}>
+            <div className="paper modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '30rem', padding: '2rem', textAlign: 'center' }}>
+              <h2>Confirm Deletion</h2>
+              <p>Are you sure you want to delete <strong>{recipeToDelete.title}</strong>? This will also remove all its ingredients from your database. This action cannot be undone.</p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+                <button onClick={() => setRecipeToDelete(null)} disabled={isDeleting} style={{ backgroundColor: '#f5f5f5' }}>Cancel</button>
+                <button 
+                  onClick={() => handleDelete(recipeToDelete.id)} 
+                  disabled={isDeleting}
+                  style={{ backgroundColor: '#e74c3c', color: 'white' }}
+                >
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete Recipe'}
+                </button>
               </div>
             </div>
           </div>

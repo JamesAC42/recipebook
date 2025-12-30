@@ -1,12 +1,67 @@
 const express = require('express');
 const multer = require('multer');
+const sharp = require('sharp');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
 const authenticateToken = require('../middleware/auth');
 const router = express.Router();
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    // Keep memory usage bounded; phone photos can be huge.
+    files: 10,
+    fileSize: 30 * 1024 * 1024, // 30MB per file
+  },
+});
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'your_gemini_api_key_here');
+
+const SUPPORTED_GEMINI_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+function looksLikeHeic(originalname = '') {
+  const lower = originalname.toLowerCase();
+  return lower.endsWith('.heic') || lower.endsWith('.heif');
+}
+
+async function normalizeImageForGemini(file) {
+  let mimeType = file.mimetype || '';
+  let buffer = file.buffer;
+
+  const isHeic =
+    mimeType === 'image/heic' ||
+    mimeType === 'image/heif' ||
+    mimeType === 'image/heic-sequence' ||
+    mimeType === 'image/heif-sequence' ||
+    looksLikeHeic(file.originalname);
+
+  if (isHeic) {
+    try {
+      buffer = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+      mimeType = 'image/jpeg';
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      e.name = 'UnsupportedImageFormatError';
+      e.message =
+        'HEIC/HEIF images are not supported by this server right now. Please change your camera setting to "Most Compatible" (JPEG) or upload a JPG/PNG/WebP.';
+      throw e;
+    }
+  }
+
+  if (!SUPPORTED_GEMINI_MIME_TYPES.has(mimeType)) {
+    const e = new Error(
+      `Unsupported image type "${mimeType || 'unknown'}". Please upload JPG, PNG, or WebP.`
+    );
+    e.name = 'UnsupportedImageFormatError';
+    throw e;
+  }
+
+  return {
+    inlineData: {
+      data: buffer.toString('base64'),
+      mimeType,
+    },
+  };
+}
 
 // Transcribe recipe images using Gemini
 router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => {
@@ -64,12 +119,11 @@ router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => 
       The images might be multiple pages of the same recipe. Be as accurate as possible. If some info is missing, use null.
     `;
 
-    const imageParts = req.files.map(file => ({
-      inlineData: {
-        data: file.buffer.toString('base64'),
-        mimeType: file.mimetype,
-      },
-    }));
+    const imageParts = [];
+    for (const file of req.files) {
+      // Normalize formats like HEIC -> JPEG (common on iPhones / some Android cameras).
+      imageParts.push(await normalizeImageForGemini(file));
+    }
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const response = await result.response;
@@ -85,6 +139,12 @@ router.post('/transcribe', authenticateToken, upload.any(), async (req, res) => 
     res.json(transcribedData);
   } catch (err) {
     console.error(err);
+    if (err && typeof err === 'object' && err.name === 'MulterError') {
+      return res.status(413).json({ error: 'Upload too large. Please upload fewer/smaller images.' });
+    }
+    if (err && typeof err === 'object' && err.name === 'UnsupportedImageFormatError') {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to transcribe recipe' });
   }
 });
@@ -153,6 +213,24 @@ router.get('/', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch recipes' });
+  }
+});
+
+// Delete recipe
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // ingredients will be deleted automatically due to ON DELETE CASCADE
+    const result = await db.query('DELETE FROM recipes WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Recipe not found' });
+    }
+
+    res.json({ message: 'Recipe deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete recipe' });
   }
 });
 

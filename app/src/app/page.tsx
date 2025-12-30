@@ -24,7 +24,7 @@ export default function Home() {
   const { isAuthenticated, token, isInitialized } = useAuth();
   const router = useRouter();
   const [images, setImages] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<Array<{ url: string; errored: boolean; name: string; type: string; size: number }>>([]);
   const [loading, setLoading] = useState(false);
   const [transcribed, setTranscribed] = useState<TranscribedRecipe | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -39,7 +39,13 @@ export default function Home() {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       setImages(prev => [...prev, ...newFiles]);
-      const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+      const newPreviews = newFiles.map(file => ({
+        url: URL.createObjectURL(file),
+        errored: false,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      }));
       setPreviews(prev => [...prev, ...newPreviews]);
     }
   };
@@ -68,12 +74,21 @@ export default function Home() {
         },
         body: formData,
       });
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
       if (response.ok) {
         setTranscribed(data);
         showNotify('Recipe transcribed successfully!');
       } else {
-        showNotify(data.error || 'Failed to transcribe', 'error');
+        const msg =
+          (data && typeof data === 'object' && data.error) ||
+          `Failed to transcribe (HTTP ${response.status}).`;
+        showNotify(msg, 'error');
       }
     } catch (err) {
       showNotify('Error transcribing image', 'error');
@@ -136,7 +151,7 @@ export default function Home() {
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
               <input 
                 type="file" 
-                accept="image/*" 
+                accept="image/*"
                 onChange={handleImageChange} 
                 id="file-upload" 
                 style={{ display: 'none' }}
@@ -150,7 +165,7 @@ export default function Home() {
 
               <input 
                 type="file" 
-                accept="image/*" 
+                accept="image/*"
                 capture="environment"
                 onChange={handleImageChange} 
                 id="camera-upload" 
@@ -166,7 +181,38 @@ export default function Home() {
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginTop: '1rem' }}>
               {previews.map((prev, idx) => (
                 <div key={idx} style={{ position: 'relative', width: '8rem', height: '8rem' }}>
-                  <img src={prev} alt={`Preview ${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover', border: '2px solid var(--border-color)' }} />
+                  {!prev.errored ? (
+                    <img
+                      src={prev.url}
+                      alt={`Preview ${idx}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', border: '2px solid var(--border-color)' }}
+                      onError={() => {
+                        setPreviews(p => p.map((x, i) => (i === idx ? { ...x, errored: true } : x)));
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: '2px solid var(--border-color)',
+                        background: '#f5f5f5',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        padding: '0.5rem',
+                        boxSizing: 'border-box',
+                        fontSize: '0.75rem',
+                        lineBreak: 'anywhere',
+                      }}
+                    >
+                      <strong>Preview unavailable</strong>
+                      <div style={{ marginTop: '0.25rem' }}>{prev.name}</div>
+                      <div style={{ opacity: 0.8 }}>{prev.type || 'unknown type'}</div>
+                    </div>
+                  )}
                   <button 
                     onClick={() => removeImage(idx)}
                     style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', padding: '0.2rem 0.5rem', borderRadius: '50%', backgroundColor: '#e74c3c', color: 'white', border: 'none', boxShadow: 'none' }}
